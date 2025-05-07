@@ -6,6 +6,7 @@ import queue
 import threading
 import subprocess
 from pathlib import Path
+import re
 
 def install_requirements():
     try:
@@ -34,6 +35,7 @@ from tkinter import filedialog, messagebox
 
 # Get the directory containing the script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ISO2GOD_DIR = os.path.join(SCRIPT_DIR, "iso2god")
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "watcher_config.json")
 
 DEFAULT_CONFIG = {
@@ -43,7 +45,8 @@ DEFAULT_CONFIG = {
     "thread_count": "4",
     "scan_delay": "2",  # Default 2 second scan delay
     "delete_iso": True,  # Default to deleting ISOs after conversion
-    "process_timeout": "0"  # 0 means no timeout, otherwise in minutes
+    "process_timeout": "0",  # 0 means no timeout, otherwise in minutes
+    "iso2god_binary": ""
 }
 
 class IsoHandler(FileSystemEventHandler):
@@ -120,7 +123,14 @@ class DirectoryWatcher(threading.Thread):
 class Iso2GodGUI:
     def __init__(self):
         self.app = tk.Tk()
-        self.app.title("ISO2GOD Watcher")
+        # Set window icon to icon.ico if available
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+        try:
+            if os.path.exists(icon_path):
+                self.app.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"Warning: Could not set window icon: {e}")
+        self.app.title("ISO2GOD-rs GUI")
         self.app.geometry("800x600")
         
         # Configure style
@@ -140,6 +150,17 @@ class Iso2GodGUI:
         # Load saved settings
         self.config = self.load_config()
         
+        # Find iso2god binaries
+        self.iso2god_binaries = self.find_iso2god_binaries()
+        self.selected_iso2god = tk.StringVar()
+        # Set default selection from config or first found
+        if self.config.get("iso2god_binary") and self.config["iso2god_binary"] in self.iso2god_binaries:
+            self.selected_iso2god.set(self.config["iso2god_binary"])
+        elif self.iso2god_binaries:
+            self.selected_iso2god.set(self.iso2god_binaries[0])
+        else:
+            self.selected_iso2god.set("")
+        
         # Create GUI elements
         self.create_widgets()
         
@@ -150,16 +171,33 @@ class Iso2GodGUI:
         # Add periodic check for GUI responsiveness
         self.check_gui_responsive()
 
+        # Show warning about missing iso2god binaries after all widgets are created
+        if not self.iso2god_binaries:
+            self.update_status("Warning: No iso2god binaries found in ./iso2god folder!", "error")
+
     def check_gui_responsive(self):
         """Periodic check to keep GUI responsive"""
         self.app.after(100, self.check_gui_responsive)
+
+    def find_iso2god_binaries(self):
+        """Scan iso2god directory for binaries named <os>-<version>[.ext]"""
+        binaries = []
+        if not os.path.exists(ISO2GOD_DIR):
+            return binaries
+        # Accept patterns like windows-1.6.0, mac-1.6.0, linux-1.6.0, with or without .exe/.bin/.sh
+        pattern = re.compile(r'^(windows|mac|linux)-[\d.]+(\.[a-zA-Z0-9]+)?$')
+        for fname in os.listdir(ISO2GOD_DIR):
+            fpath = os.path.join(ISO2GOD_DIR, fname)
+            if os.path.isfile(fpath):
+                if pattern.match(fname):
+                    binaries.append(fname)
+        return sorted(binaries)
 
     def load_config(self):
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, 'r') as f:
                     loaded_config = json.load(f)
-                    # Create a new config dictionary with defaults, updated by loaded values
                     config = DEFAULT_CONFIG.copy()
                     config.update(loaded_config)
                     return config
@@ -175,7 +213,8 @@ class Iso2GodGUI:
             "thread_count": self.thread_count.get(),
             "scan_delay": self.scan_delay.get(),
             "delete_iso": self.delete_iso_var.get(),
-            "process_timeout": self.process_timeout.get()
+            "process_timeout": self.process_timeout.get(),
+            "iso2god_binary": self.selected_iso2god.get()
         }
         try:
             with open(CONFIG_FILE, 'w') as f:
@@ -211,6 +250,14 @@ class Iso2GodGUI:
         
         browse_output_btn = ttk.Button(output_frame, text="Browse", command=self.browse_output_dir)
         browse_output_btn.pack(side="right")
+
+        # Iso2God Binary Selection Frame
+        iso2god_frame = ttk.Frame(main_container)
+        iso2god_frame.pack(fill="x", pady=5)
+        ttk.Label(iso2god_frame, text="iso2god Version:").pack(side="left")
+        self.iso2god_dropdown = ttk.Combobox(iso2god_frame, textvariable=self.selected_iso2god, values=self.iso2god_binaries, state="readonly", width=40)
+        self.iso2god_dropdown.pack(side="left", padx=5, fill="x", expand=True)
+        self.iso2god_dropdown.bind("<<ComboboxSelected>>", lambda e: self.save_config())
 
         # Settings Frame
         settings_frame = ttk.Frame(main_container)
@@ -271,7 +318,7 @@ class Iso2GodGUI:
         control_frame = ttk.Frame(main_container)
         control_frame.pack(fill="x", pady=5)
 
-        self.start_btn = ttk.Button(control_frame, text="Start Watching", command=self.toggle_watching)
+        self.start_btn = ttk.Button(control_frame, text="Start Conversion", command=self.toggle_watching)
         self.start_btn.pack(side="left", padx=5)
 
         self.clear_btn = ttk.Button(control_frame, text="Clear Queue", command=self.clear_queue)
@@ -306,30 +353,35 @@ class Iso2GodGUI:
             self.output_path.insert(0, directory)
             self.save_config()
 
-    def update_status(self, message, status_type=None):
-        """Update both the status bar and the status text area"""
+    def update_status(self, message, status_type=None, current_index=None, total_count=None):
+        """Update both the status bar and the status text area, with optional queue info"""
         self.status_text.configure(state="normal")
         timestamp = time.strftime("%H:%M:%S")
-        
+
+        # Add queue info to the message if provided
+        queue_info = ""
+        if current_index is not None and total_count is not None:
+            queue_info = f" (Processing {current_index} of {total_count})"
+
         # Update status label
         if status_type == "found":
-            self.status_label.configure(text=f"Status: ISO Found - {os.path.basename(message)}")
+            self.status_label.configure(text=f"Status: ISO Found - {os.path.basename(message)}{queue_info}")
         elif status_type == "success":
-            self.status_label.configure(text="Status: Conversion Complete")
+            self.status_label.configure(text=f"Status: Conversion Complete{queue_info}")
         elif status_type == "error":
-            self.status_label.configure(text="Status: Error Occurred")
+            self.status_label.configure(text=f"Status: Error Occurred{queue_info}")
         elif status_type == "watching":
-            self.status_label.configure(text=f"Status: Watching - {message}")
+            self.status_label.configure(text=f"Status: Watching - {message}{queue_info}")
         else:
-            self.status_label.configure(text=f"Status: {message}")
+            self.status_label.configure(text=f"Status: {message}{queue_info}")
 
         # Add message to text area with appropriate tag
         if status_type:
             self.status_text.insert("end", f"{timestamp} - ", "")
-            self.status_text.insert("end", f"{message}\n", status_type)
+            self.status_text.insert("end", f"{message}{queue_info}\n", status_type)
         else:
-            self.status_text.insert("end", f"{timestamp} - {message}\n")
-            
+            self.status_text.insert("end", f"{timestamp} - {message}{queue_info}\n")
+
         self.status_text.see("end")
         self.status_text.configure(state="disabled")
 
@@ -377,7 +429,7 @@ class Iso2GodGUI:
                     except:
                         pass
                 self.watcher = None
-                messagebox.showerror("Error", f"Failed to start watching: {str(e)}")
+                messagebox.showerror("Error", f"Failed to start converting: {str(e)}")
         else:
             self.stop_watching()
 
@@ -386,7 +438,7 @@ class Iso2GodGUI:
             try:
                 self.watcher.stop()
                 self.watcher = None
-                self.start_btn.configure(text="Start Watching")
+                self.start_btn.configure(text="Start Conversion")
                 self.update_status("Stopped watching")
                 self.is_processing = False
             except Exception as e:
@@ -405,32 +457,52 @@ class Iso2GodGUI:
         while True:
             if self.is_processing:
                 try:
+                    total_count = self.iso_queue.qsize()
+                    if total_count == 0:
+                        time.sleep(0.1)
+                        continue
+                    # Calculate the current index (1-based)
+                    current_index = total_count - self.iso_queue.qsize() + 1
                     iso_path = self.iso_queue.get(timeout=1)
-                    self.process_iso(iso_path)
+                    self.process_iso(iso_path, current_index=current_index, total_count=total_count)
                 except queue.Empty:
                     time.sleep(0.1)
             else:
                 time.sleep(0.1)
 
-    def process_iso(self, iso_path):
+    def process_iso(self, iso_path, current_index=None, total_count=None):
+        max_retries = 3  # Maximum number of retry attempts
+        retry_delay = 120  # Delay between retries in seconds
+        current_try = 0
+        last_progress_time = 0  # Track last progress update
+        progress_update_interval = 10  # Update every 10 seconds
+        # --- v1.6.0 and below edge case support ---
+        def is_legacy_version(binary_name):
+            import re
+            m = re.search(r'-(\d+\.\d+\.\d+)', binary_name)
+            if m:
+                version = m.group(1)
+                # Compare as tuple of ints
+                version_tuple = tuple(map(int, version.split('.')))
+                return version_tuple <= (1, 6, 0)
+            return False
+        # --- end legacy support ---
         try:
             # Update the current game title display
             filename = os.path.basename(iso_path)
             game_title = os.path.splitext(filename)[0]
             self.game_title_var.set(game_title)
-            
-            self.update_status(f"Found new ISO: {filename}", "found")
-            
-            # Get the path to iso2god.exe relative to the script
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            iso2god_path = os.path.join(script_dir, "iso2god.exe")
-            
-            max_retries = 3  # Maximum number of retry attempts
-            retry_delay = 120  # Delay between retries in seconds
-            current_try = 0
-            last_progress_time = 0  # Track last progress update
-            progress_update_interval = 10  # Update every 10 seconds
-            
+            self.update_status(f"Found new ISO: {filename}", "found", current_index=current_index, total_count=total_count)
+            # Get the path to iso2god binary from selection
+            iso2god_binary = self.selected_iso2god.get()
+            if not iso2god_binary:
+                self.update_status("No iso2god binary selected!", "error")
+                return
+            iso2god_path = os.path.join(ISO2GOD_DIR, iso2god_binary)
+            if not os.path.exists(iso2god_path):
+                self.update_status(f"iso2god binary not found: {iso2god_path}", "error")
+                return
+            legacy_mode = is_legacy_version(iso2god_binary)
             while current_try < max_retries:
                 try:
                     # Check if file is accessible before attempting conversion
@@ -439,24 +511,22 @@ class Iso2GodGUI:
                             pass
                     except PermissionError:
                         if current_try < max_retries - 1:
-                            self.update_status(f"File {filename} is locked. Retrying in {retry_delay} seconds... (Attempt {current_try + 1}/{max_retries})", "error")
+                            self.update_status(f"File {filename} is locked. Retrying in {retry_delay} seconds... (Attempt {current_try + 1}/{max_retries})", "error", current_index=current_index, total_count=total_count)
                             time.sleep(retry_delay)
                             current_try += 1
                             continue
                         else:
-                            self.update_status(f"Skipping {filename} - File remained locked after {max_retries} attempts", "error")
+                            self.update_status(f"Skipping {filename} - File remained locked after {max_retries} attempts", "error", current_index=current_index, total_count=total_count)
                             return
-                    
                     cmd = [iso2god_path, iso_path, self.output_path.get()]
-                    
                     # Add optional arguments
                     if self.trim_var.get():
                         cmd.append("--trim")
-                    
                     thread_count = self.thread_count.get()
-                    if thread_count.isdigit():
+                    # Only add -j if not legacy
+                    add_j = thread_count.isdigit() and not legacy_mode
+                    if add_j:
                         cmd.extend(["-j", thread_count])
-
                     # Get timeout value in minutes (0 means no timeout)
                     try:
                         timeout_minutes = float(self.process_timeout.get())
@@ -464,9 +534,7 @@ class Iso2GodGUI:
                     except ValueError:
                         timeout_seconds = None
                         self.update_status("Invalid timeout value, proceeding without timeout", "error")
-
-                    self.update_status(f"Starting conversion of {filename}...")
-                    
+                    self.update_status(f"Starting conversion of {filename}...", current_index=current_index, total_count=total_count)
                     process = subprocess.Popen(
                         cmd,
                         stdout=subprocess.PIPE,
@@ -474,12 +542,11 @@ class Iso2GodGUI:
                         text=True,
                         bufsize=1  # Line buffered
                     )
-
                     # Store the last output line for progress updates
                     last_output = ""
                     conversion_start_time = time.time()
-
                     # Use separate thread for reading output to prevent blocking
+                    error_detected = {"unexpected_j": False}
                     def read_output(pipe, is_error=False):
                         nonlocal last_output
                         while True:
@@ -488,23 +555,23 @@ class Iso2GodGUI:
                                 break
                             line = line.strip()
                             if line:
+                                # --- legacy error detection ---
+                                if is_error and legacy_mode and "unexpected argument '-j' found" in line:
+                                    error_detected["unexpected_j"] = True
+                                # --- end legacy error detection ---
                                 # Check for file access errors in the output
                                 if is_error and ("process cannot access the file" in line or 
                                                "being used by another process" in line):
                                     raise PermissionError(line)
-                                
                                 # Update progress immediately for part file updates
                                 if "writing part files:" in line:
                                     self.status_label.configure(text=f"Status: {line}")
                                     self.app.update_idletasks()
-                                
                                 self.update_status(line, "error" if is_error else None)
                                 if not is_error:
                                     last_output = line
-                                    
                                 # Keep GUI responsive
                                 self.app.update_idletasks()
-
                     # Start output reader threads
                     stdout_thread = threading.Thread(target=read_output, args=(process.stdout,))
                     stderr_thread = threading.Thread(target=read_output, args=(process.stderr, True))
@@ -512,88 +579,87 @@ class Iso2GodGUI:
                     stderr_thread.daemon = True
                     stdout_thread.start()
                     stderr_thread.start()
-
                     # Wait for process with optional timeout and progress updates
                     while process.poll() is None:
                         current_time = time.time()
-                        
                         # Check for timeout
                         if timeout_seconds and current_time - conversion_start_time > timeout_seconds:
                             process.terminate()
                             time.sleep(1)
                             if process.poll() is None:
                                 process.kill()
-                            self.update_status(f"Skipping {filename} - Process timed out after {timeout_minutes} minutes", "error")
+                            self.update_status(f"Skipping {filename} - Process timed out after {timeout_minutes} minutes", "error", current_index=current_index, total_count=total_count)
                             return
-                        
                         # Only show elapsed time if we haven't seen a progress update recently
                         if current_time - last_progress_time >= progress_update_interval and not "writing part files:" in last_output:
                             elapsed_minutes = (current_time - conversion_start_time) / 60
                             self.update_status(
                                 f"Converting {filename} - "
                                 f"Time elapsed: {int(elapsed_minutes)} minutes - "
-                                f"Last status: {last_output}"
+                                f"Last status: {last_output}", current_index=current_index, total_count=total_count
                             )
                             last_progress_time = current_time
-                        
                         # Keep GUI responsive without consuming CPU
                         self.app.update()
                         time.sleep(0.1)  # Small sleep to prevent CPU spinning
-
                     # Get final return code
                     return_code = process.poll()
-
                     # Wait for output threads to finish
                     stdout_thread.join(1)
                     stderr_thread.join(1)
-                    
+                    # --- legacy retry logic ---
+                    if legacy_mode and error_detected["unexpected_j"] and add_j:
+                        self.update_status("Detected '-j' error for legacy iso2god. Retrying without '-j'...", "error", current_index=current_index, total_count=total_count)
+                        legacy_mode = True  # Ensure legacy mode stays True
+                        current_try += 1
+                        continue  # Retry without -j
+                    # --- end legacy retry logic ---
                     if return_code == 0:
                         elapsed_minutes = (time.time() - conversion_start_time) / 60
                         self.update_status(
                             f"Successfully converted: {filename} "
                             f"(Total time: {int(elapsed_minutes)} minutes)", 
-                            "success"
+                            "success", current_index=current_index, total_count=total_count
                         )
-                        # Delete the original ISO if option is enabled
-                        if self.delete_iso_var.get():
+                        # Delete the original ISO if option is enabled and still processing
+                        if self.delete_iso_var.get() and self.is_processing:
                             try:
                                 os.remove(iso_path)
-                                self.update_status(f"Deleted original ISO: {filename}", "success")
+                                self.update_status(f"Deleted original ISO: {filename}", "success", current_index=current_index, total_count=total_count)
                             except Exception as e:
-                                self.update_status(f"Error deleting ISO {filename}: {str(e)}", "error")
+                                self.update_status(f"Error deleting ISO {filename}: {str(e)}", "error", current_index=current_index, total_count=total_count)
+                        elif self.delete_iso_var.get() and not self.is_processing:
+                            self.update_status(f"ISO not deleted because processing was stopped: {filename}", current_index=current_index, total_count=total_count)
                         else:
-                            self.update_status(f"ISO kept (delete option disabled): {filename}")
+                            self.update_status(f"ISO kept (delete option disabled): {filename}", current_index=current_index, total_count=total_count)
                         return  # Success - exit retry loop
                     else:
                         error_msg = f"Error converting {filename}: Process returned {return_code}"
                         if current_try < max_retries - 1:
-                            self.update_status(f"{error_msg}. Retrying in {retry_delay} seconds... (Attempt {current_try + 1}/{max_retries})", "error")
+                            self.update_status(f"{error_msg}. Retrying in {retry_delay} seconds... (Attempt {current_try + 1}/{max_retries})", "error", current_index=current_index, total_count=total_count)
                             time.sleep(retry_delay)
                             current_try += 1
                         else:
-                            self.update_status(f"Skipping {filename} - {error_msg} after {max_retries} attempts", "error")
+                            self.update_status(f"Skipping {filename} - {error_msg} after {max_retries} attempts", "error", current_index=current_index, total_count=total_count)
                             return
-
                 except PermissionError as e:
                     if current_try < max_retries - 1:
-                        self.update_status(f"File access error: {str(e)}. Retrying in {retry_delay} seconds... (Attempt {current_try + 1}/{max_retries})", "error")
+                        self.update_status(f"File access error: {str(e)}. Retrying in {retry_delay} seconds... (Attempt {current_try + 1}/{max_retries})", "error", current_index=current_index, total_count=total_count)
                         time.sleep(retry_delay)
                         current_try += 1
                     else:
-                        self.update_status(f"Skipping {filename} - File access error after {max_retries} attempts: {str(e)}", "error")
+                        self.update_status(f"Skipping {filename} - File access error after {max_retries} attempts: {str(e)}", "error", current_index=current_index, total_count=total_count)
                         return
-
                 except Exception as e:
-                    self.update_status(f"Skipping {filename} - Unexpected error: {str(e)}", "error")
+                    self.update_status(f"Skipping {filename} - Unexpected error: {str(e)}", "error", current_index=current_index, total_count=total_count)
                     return
-
         finally:
             # Always clean up, regardless of success or failure
             self.game_title_var.set("None")  # Reset the game title display
             if iso_path in self.handler.processing:
                 self.handler.processing.remove(iso_path)
             self.iso_queue.task_done()
-            self.update_status("Ready for next file in queue")
+            self.update_status("Ready for next file in queue", current_index=current_index, total_count=total_count)
 
     def run(self):
         self.app.protocol("WM_DELETE_WINDOW", self.on_closing)

@@ -1,0 +1,10 @@
+{
+    "watch_dir": "",
+    "output_dir": "",
+    "trim_unused": false,
+    "thread_count": "4",
+    "scan_delay": "2",
+    "delete_iso": true,
+    "process_timeout": "0",
+    "iso2god_binary": "linux-1.5.4"
+}

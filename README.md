@@ -1,8 +1,16 @@
-# 🎮 iso2god-Watchdog
+<p align="center">
+  <img src="image.png" alt="iso2god-Watchdog GUI Screenshot" width="600"/>
+</p>
+
+# �� iso2god-Watchdog
 
 A friendly GUI watchdog for [iso2god-rs](https://github.com/iliazeus/iso2god-rs) that automatically monitors folders and converts Xbox 360 ISOs to Games on Demand (GOD) format! Never manually convert ISOs again - just drop them in a folder and let Watchdog handle the rest.
 
 ## ✨ Features
+
+- **iso2god version selection**: Different versions of iso2god-rs perform differently for different users. Easily test to find what works best for you!
+
+For example using 12 threads on my AMD Ryzen 9 6900HS 1.6.0 converts a game in 15 minutes or less, while versions 1.7.0 - 1.8.0 can take 45 - 180 minutes!
 
 - 🔍 **Automatic Folder Watching**: Just point it to a folder and it'll detect new ISOs automatically
 - 🎯 **Smart Queue System**: Handles multiple ISOs in sequence with retry capability
@@ -39,9 +47,9 @@ A friendly GUI watchdog for [iso2god-rs](https://github.com/iliazeus/iso2god-rs)
 
 ### Running the Application
 1. Navigate to the extracted/cloned folder
-2. Run `watchdog.py`:
-   - **Windows**: Double click `watchdog.py` or run `python watchdog.py` in terminal
-   - **Linux/MacOS**: Open terminal and run `python3 watchdog.py`
+2. Run the GUI using the provided script for your platform:
+   - **Windows**: Double click `run_GUI.bat` or run it from a terminal
+   - **Linux/MacOS**: Run `./run_GUI.sh` from a terminal
 3. On first run, required packages will be automatically installed
 
 ### Setting Up
@@ -61,6 +69,20 @@ A friendly GUI watchdog for [iso2god-rs](https://github.com/iliazeus/iso2god-rs)
 - **Process Timeout**: Maximum minutes for conversion (0 = no limit)
 - **Trim Unused Space**: Option to reduce file size
 - **Delete ISO**: Automatically remove source ISO after successful conversion
+
+## 🔄 Managing iso2god Versions
+
+The GUI supports multiple versions of the `iso2god` binary for different platforms and versions. To add or update available versions:
+
+1. **Locate the `iso2god` folder**: Inside the project directory, there is a folder named `iso2god`.
+2. **Add new binaries**: Place your new `iso2god` binaries in this folder. The filename should follow the pattern:
+   - `windows-<version>.exe` (e.g., `windows-1.8.0.exe`)
+   - `linux-<version>` (e.g., `linux-1.8.0`)
+   - `mac-<version>` (e.g., `mac-1.8.0`)
+3. **Remove old versions**: Simply delete the old binary files from the `iso2god` folder if you no longer need them.
+4. **Restart the GUI**: The application will automatically detect all valid binaries in the `iso2god` folder and list them in the version dropdown.
+
+> **Tip:** You can keep multiple versions for different platforms and switch between them in the GUI as needed.
 
 ## 📝 Notes
 
