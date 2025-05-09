@@ -8,6 +8,16 @@ import subprocess
 from pathlib import Path
 import re
 
+# Check if pip is installed
+def check_pip():
+    try:
+        import pip
+    except ImportError:
+        print("ERROR: pip is not installed.")
+        sys.exit()   
+
+check_pip()
+
 def install_requirements():
     try:
         # Get the directory containing this script
