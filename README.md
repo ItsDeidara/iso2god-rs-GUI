@@ -50,6 +50,7 @@ For example using 12 threads on my AMD Ryzen 9 6900HS 1.6.0 converts a game in 1
 2. Run the GUI using the provided script for your platform:
    - **Windows**: Double click `run_GUI.bat` or run it from a terminal
    - **Linux/MacOS**: Run `./run_GUI.sh` from a terminal
+   - **Linux**: Give the the iso2god executables (ex. linux-1.8.0) execution permissions using chmod +x [program name] 
 3. On first run, required packages will be automatically installed
 
 ### Setting Up
