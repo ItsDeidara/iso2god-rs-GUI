@@ -47,11 +47,11 @@ For example using 12 threads on my AMD Ryzen 9 6900HS 1.6.0 converts a game in 1
 
 ### Running the Application
 1. Navigate to the extracted/cloned folder
-2. Run the GUI using the provided script for your platform:
+2. **LINUX ONLY**: Give the the `iso2god` executables (ex. `linux-1.8.0`) execution permissions using `chmod +x [program name]` 
+3. Run the GUI using the provided script for your platform:
    - **Windows**: Double click `run_GUI.bat` or run it from a terminal
    - **Linux/MacOS**: Run `./run_GUI.sh` from a terminal
-   - **Linux**: Give the the iso2god executables (ex. linux-1.8.0) execution permissions using chmod +x [program name] 
-3. On first run, required packages will be automatically installed
+4. On first run, the required packages will be automatically installed
 
 ### Setting Up
 1. When the GUI opens:
@@ -93,7 +93,42 @@ The GUI supports multiple versions of the `iso2god` binary for different platfor
 
 ## 🐛 Troubleshooting
 
-If you encounter issues:
+**Fixing `ModuleNotFoundError: No module named 'tkinter'`**
+1. Try running the GUI script for your Operating System as:
+   - **Windows**: Administrator (`Run as Administrator` in the right click menu)
+   - **Linux/MacOS**: sudo/root (running it in the terminal as sudo/root)
+2. Try (re)installing tkinter:
+     - **Windows**: Make sure that `tkinter` is installed by selecting `Modify` on the installer. ![image](https://github.com/user-attachments/assets/611f117d-6ae6-44ae-89e6-de3bbeb482ac)
+     
+     If you have confirmed it is installed and running the batch file as Admin doesn't fix the issue, reinstall python.
+
+     
+    - **Linux**: Install `tkinter` for your distro:
+    
+        **Ubuntu/Debian**: `sudo apt-get install python3-tk`
+
+        **Fedora**: `sudo dnf install python3-tkinter`
+        
+        **Arch**: `sudo pacman -S tk`
+        
+        **REHL/CentOS6/CentOS7**: `sudo yum install -y python3-tkinter`
+        
+        **OpenSUSE**: `sudo zypper in -y python-tk`
+
+
+   - **MacOS**: Install `tkinter` using brew:
+        `brew install python-tk`
+
+
+**Fixing `File access error: [Errno 13] Permission denied: [location of executable]. Retrying in 120 seconds... (Attempt */3)`**
+
+  1. Run the GUI script as sudo/root
+     
+  2. Make sure that the `iso2god` executables (ex. `linux-1.8.0`) have execution permissions using `chmod +x [program name]`
+
+
+      
+If you encounter other issues:
 1. Check the status messages in the main window
 2. Make sure you have write permissions in both directories
 3. Try increasing the scan delay if files are skipped
